@@ -1,130 +1,127 @@
 import streamlit as st
-import json
 import os
-from PIL import Image
-import pytesseract
+import json
+import uuid
 
-# Initialize or load user data
-USERS_FILE = "users.json"
-if not os.path.exists(USERS_FILE):
-    with open(USERS_FILE, "w") as f:
+# Page setup
+st.set_page_config(page_title="Health Repository", layout="centered")
+st.markdown("<h1 style='text-align: center; color: black;'>🩺 Health Repository</h1>", unsafe_allow_html=True)
+
+# Ensure users database exists
+users_db = "users.json"
+if not os.path.exists(users_db):
+    with open(users_db, "w") as f:
         json.dump({}, f)
 
+# Helper functions
 def load_users():
-    with open(USERS_FILE, "r") as f:
+    with open(users_db, "r") as f:
         return json.load(f)
 
 def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
+    with open(users_db, "w") as f:
+        json.dump(users, f, indent=4)
 
-def calculate_bmi(weight, height_cm):
+def register_user(name, phone, email, gender, age, height, weight):
+    users = load_users()
+    if email in users:
+        return False, "❌ Email already registered!"
+    user_id = str(uuid.uuid4())[:8]
+    users[email] = {
+        "user_id": user_id,
+        "name": name,
+        "phone": phone,
+        "email": email,
+        "gender": gender,
+        "age": age,
+        "height": height,
+        "weight": weight,
+        "bmi": calculate_bmi(height, weight),
+        "files": []
+    }
+    save_users(users)
+    return True, user_id
+
+def login_user(name, phone):
+    users = load_users()
+    for email, info in users.items():
+        if info["name"] == name and info["phone"] == phone:
+            return True, info
+    return False, None
+
+def calculate_bmi(height_cm, weight_kg):
     height_m = height_cm / 100
-    bmi = weight / (height_m ** 2)
-    return round(bmi, 2)
+    return round(weight_kg / (height_m ** 2), 2)
 
-def health_advice(bmi):
-    if bmi < 18.5:
-        return "You are underweight. Consider a nutritious diet plan."
-    elif 18.5 <= bmi < 24.9:
-        return "You have a healthy weight. Keep it up!"
-    elif 25 <= bmi < 29.9:
-        return "You are overweight. A weight loss plan is advised."
-    else:
-        return "You are obese. Consult a doctor for weight management."
-
-# Streamlit Config
-st.set_page_config(page_title="Health Repository", layout="centered")
-
-# Styling
-st.markdown("""
-    <style>
-    body {
-        background-color: white;
-        color: black;
-    }
-    .stTextInput > div > div > input {
-        color: black !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.title("🩺 Health Repository")
-
-# Load user data
-users = load_users()
-
-menu = st.sidebar.radio("Navigation", ["Register", "Login"])
+# Main interface
+menu = st.sidebar.selectbox("Choose Option", ["Register", "Login"])
 
 if menu == "Register":
-    st.subheader("🔐 Register")
+    st.subheader("📋 Register as a Patient")
 
     name = st.text_input("Full Name")
-    email = st.text_input("Email")
     phone = st.text_input("Phone Number")
-    gender = st.selectbox("Gender", ["Select", "Male", "Female", "Other"])
-    age = st.number_input("Age", min_value=0, max_value=120)
-    height = st.number_input("Height (in cm)")
-    weight = st.number_input("Weight (in kg)")
-    
+    email = st.text_input("Email Address")
+    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+    age = st.number_input("Age", min_value=0)
+    height = st.number_input("Height (in cm)", min_value=0.0)
+    weight = st.number_input("Weight (in kg)", min_value=0.0)
+
     if st.button("Register"):
-        if email in users:
-            st.error("Email already registered.")
+        if name and phone and email:
+            success, msg = register_user(name, phone, email, gender, age, height, weight)
+            if success:
+                st.success(f"✅ Registered successfully! Your User ID is: {msg}")
+            else:
+                st.error(msg)
         else:
-            bmi = calculate_bmi(weight, height)
-            users[email] = {
-                "name": name,
-                "phone": phone,
-                "gender": gender,
-                "age": age,
-                "height": height,
-                "weight": weight,
-                "bmi": bmi
-            }
-            save_users(users)
-            st.success(f"Registered successfully! Your BMI is {bmi}.")
+            st.warning("⚠️ Please fill all details.")
 
 elif menu == "Login":
-    st.subheader("🔓 Login")
-    login_name = st.text_input("Full Name")
-    login_phone = st.text_input("Phone Number")
+    st.subheader("🔐 Patient Login")
+
+    name = st.text_input("Enter your name")
+    phone = st.text_input("Enter your phone number")
 
     if st.button("Login"):
-        found_user = None
-        for email, data in users.items():
-            if data["name"] == login_name and data["phone"] == login_phone:
-                found_user = data
-                break
+        success, user_info = login_user(name, phone)
+        if success:
+            st.success(f"✅ Welcome back, {user_info['name']}!")
+            st.markdown("---")
+            st.markdown("## 🧾 Patient Dashboard")
+            st.write(f"**Name**: {user_info['name']}")
+            st.write(f"**Email**: {user_info['email']}")
+            st.write(f"**Gender**: {user_info['gender']}")
+            st.write(f"**Age**: {user_info['age']}")
+            st.write(f"**Height**: {user_info['height']} cm")
+            st.write(f"**Weight**: {user_info['weight']} kg")
+            st.write(f"**BMI**: {user_info['bmi']}")
 
-        if found_user:
-            st.success(f"Welcome back, {found_user['name']}!")
-            st.header("🧾 Dashboard")
-            st.markdown(f"""
-            - **Name**: {found_user['name']}
-            - **Email**: {email}
-            - **Phone**: {found_user['phone']}
-            - **Gender**: {found_user['gender']}
-            - **Age**: {found_user['age']}
-            - **Height**: {found_user['height']} cm
-            - **Weight**: {found_user['weight']} kg
-            - **BMI**: {found_user['bmi']}
-            """)
-            st.info(health_advice(found_user['bmi']))
+            # Calorie recommendation
+            if user_info['bmi'] > 25:
+                st.warning("⚠️ Your BMI indicates overweight. Consider reducing ~500 calories/day.")
+            elif user_info['bmi'] < 18.5:
+                st.warning("⚠️ You are underweight. Consider consulting a nutritionist.")
+            else:
+                st.success("✅ Your BMI is in the normal range.")
 
-            st.markdown("### 📁 Upload Medical Report/Prescription")
-            uploaded_file = st.file_uploader("Upload a PDF/Image file", type=["pdf", "png", "jpg", "jpeg"])
+            st.markdown("### 📁 Upload Medical Files (Reports or Prescriptions)")
+            uploaded = st.file_uploader("Upload a file", type=["pdf", "jpg", "png"])
+            if uploaded:
+                upload_dir = "uploaded_files"
+                os.makedirs(upload_dir, exist_ok=True)
+                file_path = os.path.join(upload_dir, uploaded.name)
+                with open(file_path, "wb") as f:
+                    f.write(uploaded.read())
+                st.success(f"✅ File {uploaded.name} uploaded successfully!")
 
-            if uploaded_file is not None:
-                st.success("File uploaded successfully.")
-                file_bytes = uploaded_file.read()
-                
-                if uploaded_file.type.startswith("image"):
-                    image = Image.open(uploaded_file)
-                    st.image(image, caption="Uploaded Report", use_column_width=True)
-                    text = pytesseract.image_to_string(image)
-                    st.markdown("**Extracted Text:**")
-                    st.text(text)
-                else:
-                    st.warning("PDF support is limited. Please upload an image for OCR text extraction.")
+                # Update user info
+                users = load_users()
+                users[user_info['email']]['files'].append(uploaded.name)
+                save_users(users)
+
         else:
-            st.error("Invalid name or phone number.")
+            st.error("❌ Login failed! Check your name and phone number.")
+
+# Footer
+st.markdown("<br><hr style='border:1px solid #eee'><div style='text-align:center;'>© 2025 Health Repository</div>", unsafe_allow_html=True)

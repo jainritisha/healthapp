@@ -1,140 +1,119 @@
 import streamlit as st
-import uuid
-import base64
+import pandas as pd
 import os
+import uuid
 
 st.set_page_config(page_title="Health App", layout="wide")
 
-# Store user data
-users = {}
-uploaded_reports = {}
+# File to store user data
+USER_DATA_FILE = "user_data.csv"
 
-# App styling
-def local_css():
-    st.markdown("""
-        <style>
-            .reportview-container {
-                background: white;
-            }
-            .main {
-                background: white;
-            }
-            .block-container {
-                padding: 2rem;
-            }
-            .stButton>button {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-                border-radius: 8px;
-                padding: 10px 24px;
-            }
-        </style>
-    """, unsafe_allow_html=True)
+# Initialize CSV
+if not os.path.exists(USER_DATA_FILE):
+    df = pd.DataFrame(columns=[
+        "name", "email", "phone", "gender", "age", "height", "weight", "bmi", "user_id"
+    ])
+    df.to_csv(USER_DATA_FILE, index=False)
 
-local_css()
+def calculate_bmi(height_cm, weight_kg):
+    height_m = height_cm / 100
+    bmi = weight_kg / (height_m ** 2)
+    return round(bmi, 2)
 
-# Function to generate unique ID
-def generate_user_id():
-    return str(uuid.uuid4())[:8]
-
-# Dashboard view
-def show_dashboard(user_id):
-    user = users[user_id]
-    st.markdown(f"## Welcome, {user['name']} 👋")
-    st.markdown(f"### Your Health Dashboard")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write(f"**Gender:** {user['gender']}")
-        st.write(f"**Email:** {user['email']}")
-        st.write(f"**Phone:** {user['phone']}")
-        st.write(f"**Age:** {user['age']}")
-    with col2:
-        st.write(f"**Weight (kg):** {user['weight']}")
-        st.write(f"**Height (cm):** {user['height']}")
-        bmi = round(user['weight'] / ((user['height'] / 100) ** 2), 2)
-        st.write(f"**BMI:** {bmi}")
-        if bmi > 25:
-            st.error("You need to reduce weight. Suggested calorie control.")
-        elif bmi < 18.5:
-            st.warning("You are underweight. Consider a balanced diet.")
-        else:
-            st.success("You have a healthy BMI!")
-
-    st.markdown("---")
-    st.subheader("Upload Reports / Prescriptions")
-    uploaded_file = st.file_uploader("Choose a PDF or text file", type=['pdf', 'txt'])
-
-    if uploaded_file:
-        content = uploaded_file.read()
-        try:
-            content = content.decode('utf-8')
-        except:
-            content = "Unable to read file."
-        st.write("**File Content:**")
-        st.text_area("Report Preview", value=content, height=200)
-        uploaded_reports[user_id] = content
-
-        # Basic analysis
-        if "blood sugar" in content.lower():
-            st.info("⚠️ Blood Sugar mentioned. Schedule a diabetes checkup.")
-        elif "cholesterol" in content.lower():
-            st.info("⚠️ Cholesterol levels mentioned. Schedule lipid profile.")
-        else:
-            st.success("✅ Report looks fine. Keep uploading for regular checkups.")
-
-# Registration
-def register(role):
-    st.title(f"{role} Registration")
-    name = st.text_input("Name")
-    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+def register_user():
+    st.subheader("Register as a Patient")
+    name = st.text_input("Full Name")
     email = st.text_input("Email")
     phone = st.text_input("Phone Number")
-    age = st.number_input("Age", min_value=0, max_value=120)
-    weight = st.number_input("Weight (in kg)", min_value=0.0)
-    height = st.number_input("Height (in cm)", min_value=0.0)
+    gender = st.radio("Gender", ["Male", "Female", "Other"])
+    age = st.number_input("Age", min_value=0, max_value=120, step=1)
+    height = st.number_input("Height (in cm)", min_value=50.0, max_value=250.0)
+    weight = st.number_input("Weight (in kg)", min_value=10.0, max_value=300.0)
 
     if st.button("Register"):
-        if not all([name, email, phone, age, weight, height]):
-            st.warning("Please fill in all fields.")
+        if not name or not email or not phone:
+            st.warning("Please fill all mandatory fields.")
         else:
-            user_id = generate_user_id()
-            users[user_id] = {
-                "name": name,
-                "gender": gender,
-                "email": email,
-                "phone": phone,
-                "age": age,
-                "weight": weight,
-                "height": height,
-                "role": role
-            }
-            st.success(f"Registered successfully! Your User ID is `{user_id}`")
-            st.info("Please copy your ID to log in next time.")
+            df = pd.read_csv(USER_DATA_FILE)
+            if email in df["email"].values:
+                st.error("Email already registered.")
+            else:
+                bmi = calculate_bmi(height, weight)
+                user_id = str(uuid.uuid4())[:8]
+                new_user = {
+                    "name": name, "email": email, "phone": phone,
+                    "gender": gender, "age": age, "height": height,
+                    "weight": weight, "bmi": bmi, "user_id": user_id
+                }
+                df = df.append(new_user, ignore_index=True)
+                df.to_csv(USER_DATA_FILE, index=False)
+                st.success(f"Registered Successfully! Your User ID is: {user_id}")
+                st.info("Now you can log in using your Name and Phone Number.")
 
-# Login
-def login():
-    st.title("User Login")
-    user_id = st.text_input("Enter your Unique ID")
+def login_user():
+    st.subheader("Login")
+    name = st.text_input("Enter your name")
+    phone = st.text_input("Enter your phone number")
 
     if st.button("Login"):
-        if user_id in users:
-            st.success("Login successful!")
-            show_dashboard(user_id)
+        df = pd.read_csv(USER_DATA_FILE)
+        user = df[(df["name"] == name) & (df["phone"] == phone)]
+
+        if not user.empty:
+            user = user.iloc[0]
+            st.success(f"Welcome, {user['name']}!")
+            display_dashboard(user)
         else:
-            st.error("User ID not found. Please register first.")
+            st.error("No matching user found. Please check your credentials.")
 
-# Home
-def home():
-    st.title("🏥 Health Assistant App")
-    st.subheader("Choose your role:")
-    option = st.selectbox("Are you a...", ["Patient", "Doctor"])
-    action = st.radio("Choose action:", ["Register", "Login"])
+def display_dashboard(user):
+    st.markdown("### 🧾 Patient Dashboard")
+    col1, col2 = st.columns(2)
 
-    if action == "Register":
-        register(option)
-    else:
-        login()
+    with col1:
+        st.write(f"**Name:** {user['name']}")
+        st.write(f"**Gender:** {user['gender']}")
+        st.write(f"**Age:** {user['age']}")
+        st.write(f"**Phone:** {user['phone']}")
 
-home()
+    with col2:
+        st.write(f"**Height:** {user['height']} cm")
+        st.write(f"**Weight:** {user['weight']} kg")
+        st.write(f"**BMI:** {user['bmi']}")
+        bmi = user['bmi']
+        if bmi < 18.5:
+            st.warning("You are underweight. Increase calorie intake.")
+        elif bmi > 24.9:
+            st.warning("You are overweight. Reduce calorie intake.")
+        else:
+            st.success("Your BMI is in a healthy range.")
+
+    st.markdown("---")
+    st.markdown("### 📁 Upload Prescription or Medical Report")
+
+    uploaded_file = st.file_uploader("Upload Medical File (PDF/IMG)", type=['pdf', 'png', 'jpg', 'jpeg'])
+
+    if uploaded_file:
+        st.success("File uploaded successfully.")
+        # Placeholder for analysis
+        st.info("We will analyze your report soon...")
+
+# Streamlit layout
+st.title("🏥 Health App Portal")
+
+menu = st.sidebar.selectbox("Choose an option", ["Register", "Login"])
+
+if menu == "Register":
+    register_user()
+elif menu == "Login":
+    login_user()
+
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #ffffff;
+    }
+    </style>
+    """, unsafe_allow_html=True
+)

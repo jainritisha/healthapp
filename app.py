@@ -1,124 +1,140 @@
 import streamlit as st
 import uuid
-import json
+import base64
 import os
 
-# File to store user data
-DATA_FILE = "user_data.json"
+st.set_page_config(page_title="Health App", layout="wide")
 
-# Load existing data or initialize
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r") as f:
-        user_data = json.load(f)
-else:
-    user_data = {}
+# Store user data
+users = {}
+uploaded_reports = {}
 
-# Save function
-def save_data():
-    with open(DATA_FILE, "w") as f:
-        json.dump(user_data, f)
+# App styling
+def local_css():
+    st.markdown("""
+        <style>
+            .reportview-container {
+                background: white;
+            }
+            .main {
+                background: white;
+            }
+            .block-container {
+                padding: 2rem;
+            }
+            .stButton>button {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                border-radius: 8px;
+                padding: 10px 24px;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-# Generate unique ID
-def generate_id():
+local_css()
+
+# Function to generate unique ID
+def generate_user_id():
     return str(uuid.uuid4())[:8]
 
-# ----------------------------------------------
-# App Layout
-st.set_page_config(page_title="Health Dashboard", layout="centered")
-st.title("🏥 Health App Dashboard")
+# Dashboard view
+def show_dashboard(user_id):
+    user = users[user_id]
+    st.markdown(f"## Welcome, {user['name']} 👋")
+    st.markdown(f"### Your Health Dashboard")
 
-role = st.radio("Who are you?", ["Patient", "Doctor"], horizontal=True)
-
-# ----------------------------------------------
-# PATIENT SECTION
-if role == "Patient":
-    menu = st.radio("Select Option", ["Register", "Login"])
-
-    if menu == "Register":
-        st.subheader("📝 New Patient Registration")
-        name = st.text_input("Full Name")
-        gender = st.selectbox("Gender", ["Select", "Male", "Female", "Other"])
-        age = st.number_input("Age", min_value=1, max_value=120)
-        height = st.number_input("Height (in cm)", min_value=50.0, max_value=250.0)
-        weight = st.number_input("Weight (in kg)", min_value=10.0, max_value=300.0)
-
-        if st.button("Register"):
-            if name and gender != "Select":
-                bmi = round(weight / ((height / 100) ** 2), 2)
-                status = ""
-                if bmi < 18.5:
-                    status = "Underweight"
-                elif 18.5 <= bmi < 24.9:
-                    status = "Normal"
-                elif 25 <= bmi < 29.9:
-                    status = "Overweight"
-                else:
-                    status = "Obese"
-
-                uid = generate_id()
-                user_data[uid] = {
-                    "name": name,
-                    "gender": gender,
-                    "age": age,
-                    "height": height,
-                    "weight": weight,
-                    "bmi": bmi,
-                    "status": status
-                }
-                save_data()
-
-                st.success(f"🎉 Registered successfully! Your Unique ID is: {uid}")
-                st.info("Please save your ID to log in later.")
-
-            else:
-                st.warning("Please fill all details.")
-
-    elif menu == "Login":
-        st.subheader("🔐 Patient Login")
-        uid = st.text_input("Enter your Unique ID")
-        if st.button("Login"):
-            if uid in user_data:
-                user = user_data[uid]
-                st.success(f"Welcome back, {user['name']}!")
-                st.write(f"**Gender:** {user['gender']}")
-                st.write(f"**Age:** {user['age']}")
-                st.write(f"**Height:** {user['height']} cm")
-                st.write(f"**Weight:** {user['weight']} kg")
-                st.write(f"**BMI:** {user['bmi']} ({user['status']})")
-
-                if user['status'] == "Overweight" or user['status'] == "Obese":
-                    st.warning("⚠️ You may need to reduce your calorie intake.")
-                elif user['status'] == "Underweight":
-                    st.warning("⚠️ You may need to increase your calorie intake.")
-                else:
-                    st.success("✅ You are in a healthy range!")
-            else:
-                st.error("❌ ID not found. Please check and try again.")
-
-# ----------------------------------------------
-# DOCTOR SECTION
-elif role == "Doctor":
-    menu = st.radio("Select Option", ["Register", "View Patients"])
-
-    if menu == "Register":
-        st.subheader("👨‍⚕️ Doctor Registration")
-        name = st.text_input("Doctor Name")
-        specialization = st.text_input("Specialization")
-        hospital = st.text_input("Hospital / Clinic Name")
-
-        if st.button("Save Doctor Info"):
-            st.success(f"Doctor {name} registered successfully.")
-            st.info("Doctor module access is currently for viewing patient data only.")
-
-    elif menu == "View Patients":
-        st.subheader("📋 Patient Records")
-        if user_data:
-            for uid, user in user_data.items():
-                with st.expander(f"{user['name']} (ID: {uid})"):
-                    st.write(f"**Gender:** {user['gender']}")
-                    st.write(f"**Age:** {user['age']}")
-                    st.write(f"**Height:** {user['height']} cm")
-                    st.write(f"**Weight:** {user['weight']} kg")
-                    st.write(f"**BMI:** {user['bmi']} ({user['status']})")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**Gender:** {user['gender']}")
+        st.write(f"**Email:** {user['email']}")
+        st.write(f"**Phone:** {user['phone']}")
+        st.write(f"**Age:** {user['age']}")
+    with col2:
+        st.write(f"**Weight (kg):** {user['weight']}")
+        st.write(f"**Height (cm):** {user['height']}")
+        bmi = round(user['weight'] / ((user['height'] / 100) ** 2), 2)
+        st.write(f"**BMI:** {bmi}")
+        if bmi > 25:
+            st.error("You need to reduce weight. Suggested calorie control.")
+        elif bmi < 18.5:
+            st.warning("You are underweight. Consider a balanced diet.")
         else:
-            st.info("No patients registered yet.")
+            st.success("You have a healthy BMI!")
+
+    st.markdown("---")
+    st.subheader("Upload Reports / Prescriptions")
+    uploaded_file = st.file_uploader("Choose a PDF or text file", type=['pdf', 'txt'])
+
+    if uploaded_file:
+        content = uploaded_file.read()
+        try:
+            content = content.decode('utf-8')
+        except:
+            content = "Unable to read file."
+        st.write("**File Content:**")
+        st.text_area("Report Preview", value=content, height=200)
+        uploaded_reports[user_id] = content
+
+        # Basic analysis
+        if "blood sugar" in content.lower():
+            st.info("⚠️ Blood Sugar mentioned. Schedule a diabetes checkup.")
+        elif "cholesterol" in content.lower():
+            st.info("⚠️ Cholesterol levels mentioned. Schedule lipid profile.")
+        else:
+            st.success("✅ Report looks fine. Keep uploading for regular checkups.")
+
+# Registration
+def register(role):
+    st.title(f"{role} Registration")
+    name = st.text_input("Name")
+    gender = st.selectbox("Gender", ["Male", "Female", "Other"])
+    email = st.text_input("Email")
+    phone = st.text_input("Phone Number")
+    age = st.number_input("Age", min_value=0, max_value=120)
+    weight = st.number_input("Weight (in kg)", min_value=0.0)
+    height = st.number_input("Height (in cm)", min_value=0.0)
+
+    if st.button("Register"):
+        if not all([name, email, phone, age, weight, height]):
+            st.warning("Please fill in all fields.")
+        else:
+            user_id = generate_user_id()
+            users[user_id] = {
+                "name": name,
+                "gender": gender,
+                "email": email,
+                "phone": phone,
+                "age": age,
+                "weight": weight,
+                "height": height,
+                "role": role
+            }
+            st.success(f"Registered successfully! Your User ID is `{user_id}`")
+            st.info("Please copy your ID to log in next time.")
+
+# Login
+def login():
+    st.title("User Login")
+    user_id = st.text_input("Enter your Unique ID")
+
+    if st.button("Login"):
+        if user_id in users:
+            st.success("Login successful!")
+            show_dashboard(user_id)
+        else:
+            st.error("User ID not found. Please register first.")
+
+# Home
+def home():
+    st.title("🏥 Health Assistant App")
+    st.subheader("Choose your role:")
+    option = st.selectbox("Are you a...", ["Patient", "Doctor"])
+    action = st.radio("Choose action:", ["Register", "Login"])
+
+    if action == "Register":
+        register(option)
+    else:
+        login()
+
+home()

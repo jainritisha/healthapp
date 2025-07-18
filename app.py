@@ -1,110 +1,124 @@
 import streamlit as st
-from datetime import datetime
-import pandas as pd
+import uuid
+import json
+import os
 
-# Initialize session state
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
+# File to store user data
+DATA_FILE = "user_data.json"
 
-if "patient_data" not in st.session_state:
-    st.session_state.patient_data = {
-        "First Name": "",
-        "Middle Name": "",
-        "Last Name": "",
-        "Date of Birth": "",
-        "Phone": "",
-        "Email": "",
-        "Height (cm)": "",
-        "Weight (kg)": "",
-        "Vitals History": []
-    }
-
-# --------- LOGIN PAGE ---------
-def login_page():
-    st.title("Patient Login")
-    with st.form("login_form"):
-        email = st.text_input("Email")
-        phone = st.text_input("Phone Number")
-        submitted = st.form_submit_button("Login")
-
-        if submitted:
-            # Dummy login for now (you can add authentication later)
-            if email and phone:
-                st.session_state.logged_in = True
-                st.session_state.patient_data["Email"] = email
-                st.session_state.patient_data["Phone"] = phone
-                st.success("Login successful!")
-            else:
-                st.error("Please enter both email and phone number to login.")
-
-# --------- PROFILE SIDEBAR ---------
-def profile_sidebar():
-    with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
-        full_name = f"{st.session_state.patient_data['First Name']} {st.session_state.patient_data['Middle Name']} {st.session_state.patient_data['Last Name']}"
-        st.markdown(f"### {full_name}")
-        st.markdown(f"📧 {st.session_state.patient_data['Email']}")
-        st.markdown(f"📱 {st.session_state.patient_data['Phone']}")
-        st.markdown(f"🎂 {st.session_state.patient_data['Date of Birth']}")
-
-# --------- DASHBOARD ---------
-def dashboard():
-    st.title("🏠 Patient Dashboard")
-    
-    # Calories box (placeholder)
-    st.metric(label="Recommended Calories", value="XXXX kcal")
-
-    st.subheader("📊 Vitals")
-    vitals = st.session_state.patient_data["Vitals History"]
-
-    if vitals:
-        df = pd.DataFrame(vitals)
-        st.dataframe(df[::-1])  # show latest first
-    else:
-        st.info("No vitals data added yet.")
-
-    st.subheader("➕ Add Vitals")
-    with st.form("vitals_form"):
-        height = st.text_input("Height (in cm)")
-        weight = st.text_input("Weight (in kg)")
-        heart_rate = st.text_input("Heart Rate (bpm)")
-        bp = st.text_input("Blood Pressure (e.g., 120/80)")
-        sugar = st.text_input("Blood Sugar (mg/dL)")
-        submitted = st.form_submit_button("Save Vitals")
-
-        if submitted:
-            entry = {
-                "Date & Time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "Height (cm)": height,
-                "Weight (kg)": weight,
-                "Heart Rate": heart_rate,
-                "BP": bp,
-                "Sugar": sugar
-            }
-            st.session_state.patient_data["Vitals History"].append(entry)
-            st.success("Vitals saved successfully!")
-
-# --------- REGISTRATION (ONLY FIRST TIME) ---------
-def registration_page():
-    st.title("📝 Register Patient Details")
-    with st.form("register_form"):
-        st.session_state.patient_data["First Name"] = st.text_input("First Name")
-        st.session_state.patient_data["Middle Name"] = st.text_input("Middle Name")
-        st.session_state.patient_data["Last Name"] = st.text_input("Last Name")
-        st.session_state.patient_data["Date of Birth"] = st.date_input("Date of Birth").strftime("%Y-%m-%d")
-        st.session_state.patient_data["Height (cm)"] = st.text_input("Height (in cm)")
-        st.session_state.patient_data["Weight (kg)"] = st.text_input("Weight (in kg)")
-        submitted = st.form_submit_button("Submit")
-        if submitted:
-            st.success("Patient profile registered!")
-            st.session_state["profile_done"] = True
-
-# --------- APP FLOW ---------
-if not st.session_state.logged_in:
-    login_page()
+# Load existing data or initialize
+if os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "r") as f:
+        user_data = json.load(f)
 else:
-    profile_sidebar()
-    if "profile_done" not in st.session_state:
-        registration_page()
-    else:
-        dashboard()
+    user_data = {}
+
+# Save function
+def save_data():
+    with open(DATA_FILE, "w") as f:
+        json.dump(user_data, f)
+
+# Generate unique ID
+def generate_id():
+    return str(uuid.uuid4())[:8]
+
+# ----------------------------------------------
+# App Layout
+st.set_page_config(page_title="Health Dashboard", layout="centered")
+st.title("🏥 Health App Dashboard")
+
+role = st.radio("Who are you?", ["Patient", "Doctor"], horizontal=True)
+
+# ----------------------------------------------
+# PATIENT SECTION
+if role == "Patient":
+    menu = st.radio("Select Option", ["Register", "Login"])
+
+    if menu == "Register":
+        st.subheader("📝 New Patient Registration")
+        name = st.text_input("Full Name")
+        gender = st.selectbox("Gender", ["Select", "Male", "Female", "Other"])
+        age = st.number_input("Age", min_value=1, max_value=120)
+        height = st.number_input("Height (in cm)", min_value=50.0, max_value=250.0)
+        weight = st.number_input("Weight (in kg)", min_value=10.0, max_value=300.0)
+
+        if st.button("Register"):
+            if name and gender != "Select":
+                bmi = round(weight / ((height / 100) ** 2), 2)
+                status = ""
+                if bmi < 18.5:
+                    status = "Underweight"
+                elif 18.5 <= bmi < 24.9:
+                    status = "Normal"
+                elif 25 <= bmi < 29.9:
+                    status = "Overweight"
+                else:
+                    status = "Obese"
+
+                uid = generate_id()
+                user_data[uid] = {
+                    "name": name,
+                    "gender": gender,
+                    "age": age,
+                    "height": height,
+                    "weight": weight,
+                    "bmi": bmi,
+                    "status": status
+                }
+                save_data()
+
+                st.success(f"🎉 Registered successfully! Your Unique ID is: {uid}")
+                st.info("Please save your ID to log in later.")
+
+            else:
+                st.warning("Please fill all details.")
+
+    elif menu == "Login":
+        st.subheader("🔐 Patient Login")
+        uid = st.text_input("Enter your Unique ID")
+        if st.button("Login"):
+            if uid in user_data:
+                user = user_data[uid]
+                st.success(f"Welcome back, {user['name']}!")
+                st.write(f"**Gender:** {user['gender']}")
+                st.write(f"**Age:** {user['age']}")
+                st.write(f"**Height:** {user['height']} cm")
+                st.write(f"**Weight:** {user['weight']} kg")
+                st.write(f"**BMI:** {user['bmi']} ({user['status']})")
+
+                if user['status'] == "Overweight" or user['status'] == "Obese":
+                    st.warning("⚠️ You may need to reduce your calorie intake.")
+                elif user['status'] == "Underweight":
+                    st.warning("⚠️ You may need to increase your calorie intake.")
+                else:
+                    st.success("✅ You are in a healthy range!")
+            else:
+                st.error("❌ ID not found. Please check and try again.")
+
+# ----------------------------------------------
+# DOCTOR SECTION
+elif role == "Doctor":
+    menu = st.radio("Select Option", ["Register", "View Patients"])
+
+    if menu == "Register":
+        st.subheader("👨‍⚕️ Doctor Registration")
+        name = st.text_input("Doctor Name")
+        specialization = st.text_input("Specialization")
+        hospital = st.text_input("Hospital / Clinic Name")
+
+        if st.button("Save Doctor Info"):
+            st.success(f"Doctor {name} registered successfully.")
+            st.info("Doctor module access is currently for viewing patient data only.")
+
+    elif menu == "View Patients":
+        st.subheader("📋 Patient Records")
+        if user_data:
+            for uid, user in user_data.items():
+                with st.expander(f"{user['name']} (ID: {uid})"):
+                    st.write(f"**Gender:** {user['gender']}")
+                    st.write(f"**Age:** {user['age']}")
+                    st.write(f"**Height:** {user['height']} cm")
+                    st.write(f"**Weight:** {user['weight']} kg")
+                    st.write(f"**BMI:** {user['bmi']} ({user['status']})")
+        else:
+            st.info("No patients registered yet.")

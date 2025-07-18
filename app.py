@@ -1,119 +1,130 @@
 import streamlit as st
-import pandas as pd
+import json
 import os
-import uuid
+from PIL import Image
+import pytesseract
 
-st.set_page_config(page_title="Health App", layout="wide")
+# Initialize or load user data
+USERS_FILE = "users.json"
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "w") as f:
+        json.dump({}, f)
 
-# File to store user data
-USER_DATA_FILE = "user_data.csv"
+def load_users():
+    with open(USERS_FILE, "r") as f:
+        return json.load(f)
 
-# Initialize CSV
-if not os.path.exists(USER_DATA_FILE):
-    df = pd.DataFrame(columns=[
-        "name", "email", "phone", "gender", "age", "height", "weight", "bmi", "user_id"
-    ])
-    df.to_csv(USER_DATA_FILE, index=False)
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f)
 
-def calculate_bmi(height_cm, weight_kg):
+def calculate_bmi(weight, height_cm):
     height_m = height_cm / 100
-    bmi = weight_kg / (height_m ** 2)
+    bmi = weight / (height_m ** 2)
     return round(bmi, 2)
 
-def register_user():
-    st.subheader("Register as a Patient")
+def health_advice(bmi):
+    if bmi < 18.5:
+        return "You are underweight. Consider a nutritious diet plan."
+    elif 18.5 <= bmi < 24.9:
+        return "You have a healthy weight. Keep it up!"
+    elif 25 <= bmi < 29.9:
+        return "You are overweight. A weight loss plan is advised."
+    else:
+        return "You are obese. Consult a doctor for weight management."
+
+# Streamlit Config
+st.set_page_config(page_title="Health Repository", layout="centered")
+
+# Styling
+st.markdown("""
+    <style>
+    body {
+        background-color: white;
+        color: black;
+    }
+    .stTextInput > div > div > input {
+        color: black !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🩺 Health Repository")
+
+# Load user data
+users = load_users()
+
+menu = st.sidebar.radio("Navigation", ["Register", "Login"])
+
+if menu == "Register":
+    st.subheader("🔐 Register")
+
     name = st.text_input("Full Name")
     email = st.text_input("Email")
     phone = st.text_input("Phone Number")
-    gender = st.radio("Gender", ["Male", "Female", "Other"])
-    age = st.number_input("Age", min_value=0, max_value=120, step=1)
-    height = st.number_input("Height (in cm)", min_value=50.0, max_value=250.0)
-    weight = st.number_input("Weight (in kg)", min_value=10.0, max_value=300.0)
-
+    gender = st.selectbox("Gender", ["Select", "Male", "Female", "Other"])
+    age = st.number_input("Age", min_value=0, max_value=120)
+    height = st.number_input("Height (in cm)")
+    weight = st.number_input("Weight (in kg)")
+    
     if st.button("Register"):
-        if not name or not email or not phone:
-            st.warning("Please fill all mandatory fields.")
+        if email in users:
+            st.error("Email already registered.")
         else:
-            df = pd.read_csv(USER_DATA_FILE)
-            if email in df["email"].values:
-                st.error("Email already registered.")
-            else:
-                bmi = calculate_bmi(height, weight)
-                user_id = str(uuid.uuid4())[:8]
-                new_user = {
-                    "name": name, "email": email, "phone": phone,
-                    "gender": gender, "age": age, "height": height,
-                    "weight": weight, "bmi": bmi, "user_id": user_id
-                }
-                df = df.append(new_user, ignore_index=True)
-                df.to_csv(USER_DATA_FILE, index=False)
-                st.success(f"Registered Successfully! Your User ID is: {user_id}")
-                st.info("Now you can log in using your Name and Phone Number.")
+            bmi = calculate_bmi(weight, height)
+            users[email] = {
+                "name": name,
+                "phone": phone,
+                "gender": gender,
+                "age": age,
+                "height": height,
+                "weight": weight,
+                "bmi": bmi
+            }
+            save_users(users)
+            st.success(f"Registered successfully! Your BMI is {bmi}.")
 
-def login_user():
-    st.subheader("Login")
-    name = st.text_input("Enter your name")
-    phone = st.text_input("Enter your phone number")
+elif menu == "Login":
+    st.subheader("🔓 Login")
+    login_name = st.text_input("Full Name")
+    login_phone = st.text_input("Phone Number")
 
     if st.button("Login"):
-        df = pd.read_csv(USER_DATA_FILE)
-        user = df[(df["name"] == name) & (df["phone"] == phone)]
+        found_user = None
+        for email, data in users.items():
+            if data["name"] == login_name and data["phone"] == login_phone:
+                found_user = data
+                break
 
-        if not user.empty:
-            user = user.iloc[0]
-            st.success(f"Welcome, {user['name']}!")
-            display_dashboard(user)
+        if found_user:
+            st.success(f"Welcome back, {found_user['name']}!")
+            st.header("🧾 Dashboard")
+            st.markdown(f"""
+            - **Name**: {found_user['name']}
+            - **Email**: {email}
+            - **Phone**: {found_user['phone']}
+            - **Gender**: {found_user['gender']}
+            - **Age**: {found_user['age']}
+            - **Height**: {found_user['height']} cm
+            - **Weight**: {found_user['weight']} kg
+            - **BMI**: {found_user['bmi']}
+            """)
+            st.info(health_advice(found_user['bmi']))
+
+            st.markdown("### 📁 Upload Medical Report/Prescription")
+            uploaded_file = st.file_uploader("Upload a PDF/Image file", type=["pdf", "png", "jpg", "jpeg"])
+
+            if uploaded_file is not None:
+                st.success("File uploaded successfully.")
+                file_bytes = uploaded_file.read()
+                
+                if uploaded_file.type.startswith("image"):
+                    image = Image.open(uploaded_file)
+                    st.image(image, caption="Uploaded Report", use_column_width=True)
+                    text = pytesseract.image_to_string(image)
+                    st.markdown("**Extracted Text:**")
+                    st.text(text)
+                else:
+                    st.warning("PDF support is limited. Please upload an image for OCR text extraction.")
         else:
-            st.error("No matching user found. Please check your credentials.")
-
-def display_dashboard(user):
-    st.markdown("### 🧾 Patient Dashboard")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.write(f"**Name:** {user['name']}")
-        st.write(f"**Gender:** {user['gender']}")
-        st.write(f"**Age:** {user['age']}")
-        st.write(f"**Phone:** {user['phone']}")
-
-    with col2:
-        st.write(f"**Height:** {user['height']} cm")
-        st.write(f"**Weight:** {user['weight']} kg")
-        st.write(f"**BMI:** {user['bmi']}")
-        bmi = user['bmi']
-        if bmi < 18.5:
-            st.warning("You are underweight. Increase calorie intake.")
-        elif bmi > 24.9:
-            st.warning("You are overweight. Reduce calorie intake.")
-        else:
-            st.success("Your BMI is in a healthy range.")
-
-    st.markdown("---")
-    st.markdown("### 📁 Upload Prescription or Medical Report")
-
-    uploaded_file = st.file_uploader("Upload Medical File (PDF/IMG)", type=['pdf', 'png', 'jpg', 'jpeg'])
-
-    if uploaded_file:
-        st.success("File uploaded successfully.")
-        # Placeholder for analysis
-        st.info("We will analyze your report soon...")
-
-# Streamlit layout
-st.title("🏥 Health App Portal")
-
-menu = st.sidebar.selectbox("Choose an option", ["Register", "Login"])
-
-if menu == "Register":
-    register_user()
-elif menu == "Login":
-    login_user()
-
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-color: #ffffff;
-    }
-    </style>
-    """, unsafe_allow_html=True
-)
+            st.error("Invalid name or phone number.")
